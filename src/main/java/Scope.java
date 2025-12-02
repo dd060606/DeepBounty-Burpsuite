@@ -1,4 +1,7 @@
 import burp.api.montoya.MontoyaApi;
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import json.JSONBody;
 
 import java.io.IOException;
 import java.net.URI;
@@ -10,8 +13,6 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 
 /**
@@ -23,7 +24,8 @@ public class Scope {
     private final Settings settings;
     private final HttpClient httpClient;
     private final ScheduledExecutorService scheduler;
-    private final Set<String> currentScopeSubdomains = new HashSet<String>();
+    private final Gson gson;
+    private final Set<String> currentScopeSubdomains = new HashSet<>();
     private int currentScopeVersion = -1;
 
     public Scope(MontoyaApi api, Settings settings) {
@@ -31,6 +33,7 @@ public class Scope {
         this.settings = settings;
         this.httpClient = HttpClient.newHttpClient();
         this.scheduler = Executors.newScheduledThreadPool(1);
+        this.gson = new Gson();
     }
 
     /**
@@ -97,7 +100,13 @@ public class Scope {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() == 200) {
-            return parseVersionFromJson(response.body());
+            try {
+                JSONBody.ScopeVersionResponse versionResponse = gson.fromJson(response.body(), JSONBody.ScopeVersionResponse.class);
+                return versionResponse.getVersion();
+            } catch (JsonSyntaxException e) {
+                api.logging().logToError("Failed to parse scope version JSON: " + e.getMessage());
+                return currentScopeVersion;
+            }
         } else {
             api.logging().logToError("Failed to get scope version. Status: " + response.statusCode());
             return currentScopeVersion;
@@ -132,70 +141,30 @@ public class Scope {
      */
     private void updateBurpScope(String scopeJson) {
         try {
-            // Parse JSON: {"version": versionNum, "subdomains": ["subdomain1", "subdomain2"]}
-            int newVersion = parseVersionFromJson(scopeJson);
-            String[] subdomains = parseSubdomainsFromJson(scopeJson);
+            JSONBody.ScopeResponse scopeResponse = gson.fromJson(scopeJson, JSONBody.ScopeResponse.class);
 
-            if (subdomains.length == 0) {
+            if (scopeResponse == null || scopeResponse.getSubdomains() == null || scopeResponse.getSubdomains().isEmpty()) {
+                api.logging().logToOutput("No subdomains found in scope response");
                 return;
             }
 
             // Add each subdomain to local scope
-            for (String subdomain : subdomains) {
+            for (String subdomain : scopeResponse.getSubdomains()) {
                 if (subdomain != null && !subdomain.isEmpty()) {
                     currentScopeSubdomains.add(subdomain);
                 }
             }
 
             // Update local version
-            currentScopeVersion = newVersion;
-            api.logging().logToOutput("Scope updated successfully! Version: " + newVersion);
+            currentScopeVersion = scopeResponse.getVersion();
+            api.logging().logToOutput("Scope updated successfully! Version: " + currentScopeVersion + ", Subdomains: " + scopeResponse.getSubdomains().size());
 
-        } catch (Exception e) {
+        } catch (JsonSyntaxException e) {
             api.logging().logToError("Error parsing scope JSON: " + e.getMessage());
             api.logging().logToError("Response was: " + scopeJson);
         }
     }
 
-    /**
-     * Parse version number from JSON response
-     */
-    private int parseVersionFromJson(String json) {
-        // Pattern to match "version": number or "version":number
-        Pattern pattern = Pattern.compile("\"version\"\\s*:\\s*(\\d+)");
-        Matcher matcher = pattern.matcher(json);
-
-        if (matcher.find()) {
-            return Integer.parseInt(matcher.group(1));
-        }
-
-        return -1;
-    }
-
-    /**
-     * Parse subdomains array from JSON response
-     */
-    private String[] parseSubdomainsFromJson(String json) {
-        // Pattern to match "subdomains": ["item1", "item2", ...]
-        Pattern pattern = Pattern.compile("\"subdomains\"\\s*:\\s*\\[([^]]*)]");
-        Matcher matcher = pattern.matcher(json);
-
-        if (matcher.find()) {
-            String arrayContent = matcher.group(1);
-
-            // Extract quoted strings
-            Pattern itemPattern = Pattern.compile("\"([^\"]+)\"");
-            Matcher itemMatcher = itemPattern.matcher(arrayContent);
-
-            java.util.List<String> subdomains = new java.util.ArrayList<>();
-            while (itemMatcher.find()) {
-                subdomains.add(itemMatcher.group(1));
-            }
-
-            return subdomains.toArray(new String[0]);
-        }
-        return new String[0];
-    }
 
     /**
      * Get the current scope subdomains
