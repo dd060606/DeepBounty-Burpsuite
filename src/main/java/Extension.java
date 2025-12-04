@@ -17,7 +17,7 @@ public class Extension implements BurpExtension {
         scope.startScopeVersionCheck();
 
         // Initialize and register HTTP handler for traffic interception
-        Handler handler = new Handler(api, settings);
+        Handler handler = new Handler(api, settings, scope);
         api.http().registerHttpHandler(handler);
 
         api.logging().logToOutput("DeepBounty extension loaded successfully");

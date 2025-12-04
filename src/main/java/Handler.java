@@ -24,6 +24,7 @@ public class Handler implements HttpHandler {
 
     private final MontoyaApi api;
     private final Settings settings;
+    private final Scope scope;
     private final Gson gson;
     private final HttpClient httpClient;
 
@@ -33,9 +34,10 @@ public class Handler implements HttpHandler {
             MimeType.SCRIPT, MimeType.PLAIN_TEXT
     );
 
-    public Handler(MontoyaApi api, Settings settings) {
+    public Handler(MontoyaApi api, Settings settings, Scope scope) {
         // Configure HttpClient with virtual threads for async operations
         this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
@@ -44,6 +46,7 @@ public class Handler implements HttpHandler {
                 .create();
         this.api = api;
         this.settings = settings;
+        this.scope = scope;
         api.logging().logToOutput("Handler initialized successfully");
     }
 
@@ -115,6 +118,11 @@ public class Handler implements HttpHandler {
             }
 
             var initiatingRequest = responseReceived.initiatingRequest();
+
+            // Check if the request URL is in scope before processing
+            if (!scope.isInScope(initiatingRequest.url())) {
+                return ResponseReceivedAction.continueWith(responseReceived);
+            }
 
             JSONBody.Traffic traffic = new JSONBody.Traffic(
                     initiatingRequest.url(),
