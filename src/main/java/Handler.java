@@ -69,7 +69,7 @@ public class Handler implements HttpHandler {
             String jsonPayload = gson.toJson(traffic);
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(serverUrl + "/ingest/burp"))
+                    .uri(URI.create(serverUrl + "/ingest"))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))

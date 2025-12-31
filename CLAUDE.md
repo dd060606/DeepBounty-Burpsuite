@@ -70,7 +70,7 @@ to the DeepBounty server for analysis.
 
 #### Ingestion Endpoint
 
-- `POST /ingest/burp` - Receives traffic data with full request/response details
+- `POST /ingest` - Receives traffic data with full request/response details
 
 All endpoints use Bearer token authentication via API key.
 
